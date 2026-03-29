@@ -13,9 +13,9 @@ import {
   ExternalLink,
   AlignLeft,
   X,
+  X,
   Loader2,
-  Calendar,
-  Image
+  Calendar
 } from 'lucide-react';
 
 // Platform configurations with their respective web upload portals
@@ -70,8 +70,6 @@ const PLATFORMS = [
 export default function App() {
   const [videoFile, setVideoFile] = useState(null);
   const [videoPreviewUrl, setVideoPreviewUrl] = useState(null);
-  const [thumbnailFile, setThumbnailFile] = useState(null);
-  const [thumbnailPreviewUrl, setThumbnailPreviewUrl] = useState(null);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [scheduleDate, setScheduleDate] = useState('');
@@ -79,14 +77,12 @@ export default function App() {
   const [copiedStates, setCopiedStates] = useState({});
   const [uploadState, setUploadState] = useState({ isUploading: false, status: '' });
   const videoInputRef = useRef(null);
-  const thumbnailInputRef = useRef(null);
 
   useEffect(() => {
     return () => {
       if (videoPreviewUrl) URL.revokeObjectURL(videoPreviewUrl);
-      if (thumbnailPreviewUrl) URL.revokeObjectURL(thumbnailPreviewUrl);
     };
-  }, [videoPreviewUrl, thumbnailPreviewUrl]);
+  }, [videoPreviewUrl]);
 
   const handleVideoChange = (e) => {
     const file = e.target.files[0];
@@ -99,29 +95,11 @@ export default function App() {
     }
   };
 
-  const handleThumbnailChange = (e) => {
-    const file = e.target.files[0];
-    if (file && file.type.startsWith('image/')) {
-      if (thumbnailPreviewUrl) URL.revokeObjectURL(thumbnailPreviewUrl);
-      setThumbnailFile(file);
-      setThumbnailPreviewUrl(URL.createObjectURL(file));
-    } else if (file) {
-      alert('Please select a valid image file.');
-    }
-  };
-
   const removeVideo = () => {
     if (videoPreviewUrl) URL.revokeObjectURL(videoPreviewUrl);
     setVideoFile(null);
     setVideoPreviewUrl(null);
     if (videoInputRef.current) videoInputRef.current.value = '';
-  };
-
-  const removeThumbnail = () => {
-    if (thumbnailPreviewUrl) URL.revokeObjectURL(thumbnailPreviewUrl);
-    setThumbnailFile(null);
-    setThumbnailPreviewUrl(null);
-    if (thumbnailInputRef.current) thumbnailInputRef.current.value = '';
   };
 
   // Modern clipboard copy function with fallback
@@ -220,26 +198,6 @@ export default function App() {
       const videoData = await uploadResponse.json();
       const videoId = videoData.id;
 
-      // 3. Upload thumbnail if available
-      if (thumbnailFile && videoId) {
-        setUploadState({ isUploading: true, status: 'Uploading thumbnail...' });
-        const thumbResponse = await fetch(`https://www.googleapis.com/upload/youtube/v3/thumbnails/set?videoId=${videoId}`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${accessToken}`,
-            'Content-Type': thumbnailFile.type
-          },
-          body: thumbnailFile
-        });
-        if (!thumbResponse.ok) {
-          const errData = await thumbResponse.json().catch(() => ({}));
-          console.warn('Thumbnail upload failed:', errData);
-          setUploadState({ isUploading: false, status: 'Upload complete!' });
-          alert(`Video uploaded successfully, but custom thumbnail failed.\n\nReason: ${errData.error?.message || 'Unknown'}\n\nNote: YouTube often auto-generates gray screens while processing Shorts, and their API restricts custom thumbnails on Shorts or on channels without phone-verification.`);
-          return;
-        }
-      }
-
       setUploadState({ isUploading: false, status: 'Upload complete!' });
       alert('Video successfully pushed to YouTube!');
       
@@ -307,81 +265,43 @@ export default function App() {
                 Prepare Content
               </h2>
 
-              {/* Media Upload Area */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                {/* Video Upload */}
-                <div>
-                  {!videoPreviewUrl ? (
-                    <div 
-                      onClick={() => videoInputRef.current?.click()}
-                      className="border-2 border-dashed border-slate-700 hover:border-indigo-500 bg-slate-800/50 hover:bg-slate-800 transition-all rounded-2xl p-6 text-center cursor-pointer group h-full flex flex-col justify-center"
+              {/* Video Upload Area */}
+              <div className="mb-6">
+                {!videoPreviewUrl ? (
+                  <div 
+                    onClick={() => videoInputRef.current?.click()}
+                    className="border-2 border-dashed border-slate-700 hover:border-indigo-500 bg-slate-800/50 hover:bg-slate-800 transition-all rounded-2xl p-8 text-center cursor-pointer group"
+                  >
+                    <Video size={48} className="mx-auto text-slate-500 group-hover:text-indigo-400 transition-colors mb-4" />
+                    <p className="text-white font-medium mb-1">Select your Short (MP4)</p>
+                    <p className="text-sm text-slate-400">Kept entirely on your local device.</p>
+                  </div>
+                ) : (
+                  <div className="relative rounded-2xl overflow-hidden bg-black aspect-[9/16] max-h-[400px] mx-auto border border-slate-700 flex items-center justify-center group">
+                    <video 
+                      src={videoPreviewUrl} 
+                      className="w-full h-full object-contain"
+                      controls
+                      autoPlay
+                      muted
+                      loop
+                    />
+                    <button 
+                      onClick={removeVideo}
+                      className="absolute top-4 right-4 bg-black/60 hover:bg-red-500/80 text-white p-2 rounded-full backdrop-blur transition-colors"
+                      title="Remove video"
                     >
-                      <Video size={36} className="mx-auto text-slate-500 group-hover:text-indigo-400 transition-colors mb-3" />
-                      <p className="text-white font-medium mb-1">Select Short</p>
-                    </div>
-                  ) : (
-                    <div className="relative rounded-2xl overflow-hidden bg-black aspect-[9/16] min-h-[220px] mx-auto border border-slate-700 flex items-center justify-center group w-full">
-                      <video 
-                        src={videoPreviewUrl} 
-                        className="w-full h-full object-contain"
-                        controls
-                        autoPlay
-                        muted
-                        loop
-                      />
-                      <button 
-                        onClick={removeVideo}
-                        className="absolute top-2 right-2 bg-black/60 hover:bg-red-500/80 text-white p-2 rounded-full backdrop-blur transition-colors"
-                        title="Remove video"
-                      >
-                        <X size={16} />
-                      </button>
-                    </div>
-                  )}
-                  <input 
-                    type="file" 
-                    accept="video/*" 
-                    className="hidden" 
-                    ref={videoInputRef}
-                    onChange={handleVideoChange}
-                  />
-                </div>
-
-                {/* Thumbnail Upload */}
-                <div>
-                  {!thumbnailPreviewUrl ? (
-                    <div 
-                      onClick={() => thumbnailInputRef.current?.click()}
-                      className="border-2 border-dashed border-slate-700 hover:border-indigo-500 bg-slate-800/50 hover:bg-slate-800 transition-all rounded-2xl p-6 text-center cursor-pointer group h-full flex flex-col justify-center"
-                    >
-                      <Image size={36} className="mx-auto text-slate-500 group-hover:text-indigo-400 transition-colors mb-3" />
-                      <p className="text-white font-medium mb-1">Select Thumbnail</p>
-                      <p className="text-xs text-slate-400">Optional</p>
-                    </div>
-                  ) : (
-                    <div className="relative rounded-2xl overflow-hidden bg-black aspect-[9/16] min-h-[220px] mx-auto border border-slate-700 flex items-center justify-center group w-full">
-                      <img 
-                        src={thumbnailPreviewUrl} 
-                        className="w-full h-full object-cover"
-                        alt="Thumbnail"
-                      />
-                      <button 
-                        onClick={removeThumbnail}
-                        className="absolute top-2 right-2 bg-black/60 hover:bg-red-500/80 text-white p-2 rounded-full backdrop-blur transition-colors"
-                        title="Remove thumbnail"
-                      >
-                        <X size={16} />
-                      </button>
-                    </div>
-                  )}
-                  <input 
-                    type="file" 
-                    accept="image/*" 
-                    className="hidden" 
-                    ref={thumbnailInputRef}
-                    onChange={handleThumbnailChange}
-                  />
-                </div>
+                      <X size={20} />
+                    </button>
+                  </div>
+                )}
+                <input 
+                  type="file" 
+                  accept="video/*" 
+                  className="hidden" 
+                  ref={videoInputRef}
+                  onChange={handleVideoChange}
+                />
               </div>
 
               {/* Text Input */}
