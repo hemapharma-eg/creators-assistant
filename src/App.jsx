@@ -14,7 +14,8 @@ import {
   Hash,
   AlignLeft,
   X,
-  Loader2
+  Loader2,
+  Calendar
 } from 'lucide-react';
 
 // Platform configurations with their respective web upload portals
@@ -71,6 +72,7 @@ export default function App() {
   const [videoPreviewUrl, setVideoPreviewUrl] = useState(null);
   const [caption, setCaption] = useState('');
   const [hashtags, setHashtags] = useState('');
+  const [scheduleDate, setScheduleDate] = useState('');
   const [copiedStates, setCopiedStates] = useState({});
   const [uploadState, setUploadState] = useState({ isUploading: false, status: '' });
   const fileInputRef = useRef(null);
@@ -188,7 +190,8 @@ export default function App() {
           },
           status: {
             privacyStatus: 'private', // Default to private for review
-            selfDeclaredMadeForKids: false
+            selfDeclaredMadeForKids: false,
+            ...(scheduleDate && { publishAt: new Date(scheduleDate).toISOString() })
           }
         })
       });
@@ -358,6 +361,23 @@ export default function App() {
                     placeholder="fyp shorts trending viral"
                     className="w-full bg-slate-950 border border-slate-700 rounded-xl p-4 text-white focus:ring-2 focus:ring-cyan-500 focus:border-transparent outline-none transition-all"
                   />
+                </div>
+
+                {/* Schedule Input */}
+                <div>
+                  <label className="flex items-center text-sm font-medium text-slate-300 mb-2">
+                    <Calendar size={16} className="mr-2 text-pink-400" />
+                    Schedule Publishing (YouTube Only)
+                  </label>
+                  <input
+                    type="datetime-local"
+                    value={scheduleDate}
+                    onChange={(e) => setScheduleDate(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl p-4 text-white focus:ring-2 focus:ring-pink-500 focus:border-transparent outline-none transition-all [color-scheme:dark]"
+                  />
+                  <p className="mt-2 text-xs text-slate-500">
+                    If set, the video will be uploaded as Private and automatically turn Public at this time.
+                  </p>
                 </div>
               </div>
             </div>
