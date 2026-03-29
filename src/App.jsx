@@ -13,7 +13,6 @@ import {
   ExternalLink,
   AlignLeft,
   X,
-  X,
   Loader2,
   Calendar
 } from 'lucide-react';
