@@ -75,6 +75,7 @@ export default function App() {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [scheduleDate, setScheduleDate] = useState('');
+  const [isForKids, setIsForKids] = useState(false);
   const [copiedStates, setCopiedStates] = useState({});
   const [uploadState, setUploadState] = useState({ isUploading: false, status: '' });
   const videoInputRef = useRef(null);
@@ -186,7 +187,7 @@ export default function App() {
           },
           status: {
             privacyStatus: 'private', // Default to private for review
-            selfDeclaredMadeForKids: false,
+            selfDeclaredMadeForKids: isForKids,
             ...(scheduleDate && { publishAt: new Date(scheduleDate).toISOString() })
           }
         })
@@ -231,12 +232,16 @@ export default function App() {
           body: thumbnailFile
         });
         if (!thumbResponse.ok) {
-          console.warn('Thumbnail upload failed.');
+          const errData = await thumbResponse.json().catch(() => ({}));
+          console.warn('Thumbnail upload failed:', errData);
+          setUploadState({ isUploading: false, status: 'Upload complete!' });
+          alert(`Video uploaded successfully, but custom thumbnail failed.\n\nReason: ${errData.error?.message || 'Unknown'}\n\nNote: YouTube often auto-generates gray screens while processing Shorts, and their API restricts custom thumbnails on Shorts or on channels without phone-verification.`);
+          return;
         }
       }
 
       setUploadState({ isUploading: false, status: 'Upload complete!' });
-      alert('Video successfully pushed to YouTube as Private!');
+      alert('Video successfully pushed to YouTube!');
       
     } catch (error) {
       console.error(error);
@@ -406,6 +411,36 @@ export default function App() {
                     placeholder="Write your amazing description and add your hashtags here... This will be used as the primary caption for platforms like TikTok/Instagram."
                     className="w-full bg-slate-950 border border-slate-700 rounded-xl p-4 text-white focus:ring-2 focus:ring-cyan-500 focus:border-transparent outline-none resize-none transition-all h-32"
                   />
+                </div>
+
+                {/* Audience Input */}
+                <div>
+                  <label className="flex items-center text-sm font-medium text-slate-300 mb-2">
+                    <Youtube size={16} className="mr-2 text-red-500" />
+                    Audience (YouTube Only)
+                  </label>
+                  <div className="flex gap-4 p-4 bg-slate-950 border border-slate-700 rounded-xl">
+                    <label className="flex items-center space-x-2 cursor-pointer">
+                      <input 
+                        type="radio" 
+                        name="forkids"
+                        checked={isForKids === true}
+                        onChange={() => setIsForKids(true)}
+                        className="text-red-500 focus:ring-red-500 bg-slate-900 border-slate-700 cursor-pointer"
+                      />
+                      <span className="text-white text-sm">Yes, made for kids</span>
+                    </label>
+                    <label className="flex items-center space-x-2 cursor-pointer">
+                      <input 
+                        type="radio" 
+                        name="forkids"
+                        checked={isForKids === false}
+                        onChange={() => setIsForKids(false)}
+                        className="text-red-500 focus:ring-red-500 bg-slate-900 border-slate-700 cursor-pointer"
+                      />
+                      <span className="text-white text-sm">No, not made for kids</span>
+                    </label>
+                  </div>
                 </div>
 
                 {/* Schedule Input */}
