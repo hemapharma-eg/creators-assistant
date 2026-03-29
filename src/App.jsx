@@ -195,7 +195,7 @@ export default function App() {
             categoryId: '22', // People & Blogs default
           },
           status: {
-            privacyStatus: 'private', // Default to private for review
+            privacyStatus: 'public', // Set to public per user request
             selfDeclaredMadeForKids: isForKids,
             ...(scheduleDate && { publishAt: new Date(scheduleDate).toISOString() })
           }
@@ -305,7 +305,7 @@ export default function App() {
         body: JSON.stringify({
           post_info: {
             title: combinedCaption.substring(0, 2200), // TikTok strictly allows 2200 char limits
-            privacy_level: 'SELF_ONLY', // We hardcode to private while App is technically "Unaudited"
+            privacy_level: 'PUBLIC_TO_EVERYONE', // Set to public per user request
             disable_duet: false,
             disable_comment: false,
             disable_stitch: false
