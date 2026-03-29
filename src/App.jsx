@@ -73,9 +73,41 @@ export default function App() {
   const [description, setDescription] = useState('');
   const [scheduleDate, setScheduleDate] = useState('');
   const [isForKids, setIsForKids] = useState(false);
+  const [tiktokAuthCode, setTiktokAuthCode] = useState(null);
   const [copiedStates, setCopiedStates] = useState({});
   const [uploadState, setUploadState] = useState({ isUploading: false, status: '' });
   const videoInputRef = useRef(null);
+
+  // Catch TikTok Popup Redirect
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const code = urlParams.get('code');
+    const state = urlParams.get('state');
+
+    if (code && state && window.opener) {
+      // Send code back to the main un-redirected window
+      window.opener.postMessage({ type: 'TIKTOK_AUTH_CODE', code, state }, window.location.origin);
+      window.close();
+    }
+  }, []);
+
+  // Listen for TikTok Popup's Message
+  useEffect(() => {
+    const handleMessage = (event) => {
+      if (event.origin !== window.location.origin) return;
+      if (event.data?.type === 'TIKTOK_AUTH_CODE') {
+        const { code, state } = event.data;
+        const savedState = sessionStorage.getItem('tiktok_oauth_state');
+        if (state !== savedState) {
+          alert('Security Warning: TikTok Login State Mismatch.');
+          return;
+        }
+        setTiktokAuthCode(code);
+      }
+    };
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -216,10 +248,134 @@ export default function App() {
     scope: 'https://www.googleapis.com/auth/youtube.upload',
   });
 
+  // Handle TikTok API Flow
+  const loginAndUploadTikTok = () => {
+    if (!videoFile) return;
+    
+    // During dev, VITE_ prefixed env variables are natively read by Vite
+    const clientKey = import.meta.env.VITE_TIKTOK_CLIENT_KEY;
+    if (!clientKey) {
+       alert("TikTok integration is disabled. You must configure your VITE_TIKTOK_CLIENT_KEY and Serverless Function Client Secret first.");
+       return;
+    }
+    
+    // 1. Initiate OAuth Popup
+    const redirectUri = window.location.origin;
+    const state = Math.random().toString(36).substring(7);
+    sessionStorage.setItem('tiktok_oauth_state', state);
+
+    // TikTok authorization endpoint
+    const authUrl = `https://www.tiktok.com/v2/auth/authorize/?client_key=${clientKey}&response_type=code&scope=video.publish&redirect_uri=${encodeURIComponent(redirectUri)}&state=${state}`;
+
+    const width = 500, height = 650;
+    const left = window.screen.width / 2 - width / 2;
+    const top = window.screen.height / 2 - height / 2;
+    window.open(authUrl, 'TikTok Login', `width=${width},height=${height},top=${top},left=${left}`);
+  };
+
+  const handleTikTokUpload = async (authCode) => {
+    if (!videoFile) return;
+    setUploadState({ isUploading: true, status: 'Authenticating with TikTok...' });
+
+    try {
+      // 1. Hit our Secure Vercel Serverless Function to hide our Secret Key!
+      const authRes = await fetch('/api/tiktok-auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: authCode, redirect_uri: window.location.origin })
+      });
+      const authData = await authRes.json();
+      if (!authRes.ok) throw new Error(authData.error || 'Failed to securely exchange TikTok token');
+      
+      const { access_token } = authData;
+
+      // 2. Initialize video upload on TikTok Servers
+      setUploadState({ isUploading: true, status: 'Initializing private upload...' });
+      const CHUNK_SIZE = 20 * 1024 * 1024; // 20 MB chunks to easily support large videos
+      const totalChunks = Math.ceil(videoFile.size / CHUNK_SIZE);
+
+      const combinedCaption = title ? `${title}\n\n${description}`.trim() : description.trim();
+
+      const initRes = await fetch('https://open.tiktokapis.com/v2/post/publish/video/init/', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${access_token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          post_info: {
+            title: combinedCaption.substring(0, 2200), // TikTok strictly allows 2200 char limits
+            privacy_level: 'SELF_ONLY', // We hardcode to private while App is technically "Unaudited"
+            disable_duet: false,
+            disable_comment: false,
+            disable_stitch: false
+          },
+          source_info: {
+            source: 'FILE_UPLOAD',
+            video_size: videoFile.size,
+            chunk_size: CHUNK_SIZE,
+            total_chunk_count: totalChunks
+          }
+        })
+      });
+
+      const initData = await initRes.json();
+      if (initData.error?.code !== 'ok') {
+         console.error('TikTok Init Error:', initData);
+         throw new Error(initData.error?.message || 'Failed to initialize TikTok portal.');
+      }
+
+      const { upload_url } = initData.data;
+
+      // 3. Perform Chunked Put Upload to isolated TikTok Media Server
+      for (let i = 0; i < totalChunks; i++) {
+        const start = i * CHUNK_SIZE;
+        const end = Math.min(start + CHUNK_SIZE, videoFile.size);
+        const chunk = videoFile.slice(start, end);
+
+        setUploadState({ isUploading: true, status: `Uploading chunk ${i + 1} of ${totalChunks}...` });
+
+        const uploadRes = await fetch(upload_url, {
+          method: 'PUT',
+          headers: {
+             'Content-Range': `bytes ${start}-${end - 1}/${videoFile.size}`,
+             'Content-Length': chunk.size.toString(),
+             'Content-Type': videoFile.type || 'video/mp4'
+          },
+          body: chunk
+        });
+
+        if (!uploadRes.ok) {
+           throw new Error(`Failed to transmit chunk ${i + 1} to TikTok servers.`);
+        }
+      }
+
+      setUploadState({ isUploading: false, status: 'Upload complete!' });
+      alert('Video successfully pushed securely to TikTok as Private!');
+    } catch (err) {
+      console.error(err);
+      setUploadState({ isUploading: false, status: '' });
+      alert(`TikTok Upload Error: ${err.message}`);
+    }
+  };
+
+  // Check if we gained a new specific code to trigger the hook safely outside event scopes
+  useEffect(() => {
+    if (tiktokAuthCode && videoFile) {
+       handleTikTokUpload(tiktokAuthCode);
+       setTiktokAuthCode(null);
+    }
+  }, [tiktokAuthCode, videoFile, title, description]);
+
   // Generate the final text to copy and open the platform
   const handlePlatformAction = (platform) => {
     if (platform.id === 'youtube') {
       loginAndUploadYouTube();
+      return;
+    }
+    
+    if (platform.id === 'tiktok') {
+      loginAndUploadTikTok();
       return;
     }
 
@@ -413,7 +569,7 @@ export default function App() {
                       </div>
 
                       <div className="flex items-center space-x-2">
-                        {platform.id === 'youtube' ? (
+                        {[ 'youtube', 'tiktok' ].includes(platform.id) ? (
                           uploadState.isUploading ? (
                             <span className="flex items-center text-xs font-medium text-indigo-400 bg-indigo-500/10 px-3 py-1.5 rounded-full">
                               <Loader2 size={14} className="mr-1 animate-spin" /> {uploadState.status}
