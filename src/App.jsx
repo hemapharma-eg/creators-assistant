@@ -44,7 +44,7 @@ const PLATFORMS = [
     color: 'text-pink-500', 
     bgHover: 'hover:bg-pink-500/10',
     borderColor: 'border-pink-500/20',
-    url: 'https://www.instagram.com/reels/create/' 
+    url: 'https://www.instagram.com/' 
   },
   { 
     id: 'facebook', 
