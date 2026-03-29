@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { useGoogleLogin } from '@react-oauth/google';
 import { 
   Youtube, 
   Instagram, 
@@ -12,7 +13,8 @@ import {
   ExternalLink,
   Hash,
   AlignLeft,
-  X
+  X,
+  Loader2
 } from 'lucide-react';
 
 // Platform configurations with their respective web upload portals
@@ -70,6 +72,7 @@ export default function App() {
   const [caption, setCaption] = useState('');
   const [hashtags, setHashtags] = useState('');
   const [copiedStates, setCopiedStates] = useState({});
+  const [uploadState, setUploadState] = useState({ isUploading: false, status: '' });
   const fileInputRef = useRef(null);
 
   // BUG FIX: Memory Management - Cleanup object URL on unmount or before creating a new one
@@ -147,8 +150,99 @@ export default function App() {
     }
   };
 
+  // Handle YouTube one-click upload
+  const handleYouTubeUpload = async (accessToken) => {
+    if (!videoFile) return;
+    
+    setUploadState({ isUploading: true, status: 'Initializing upload...' });
+    
+    const formattedTags = hashtags
+      .split(/[\s,]+/)
+      .filter(tag => tag.trim() !== '')
+      .map(tag => {
+        const cleanTag = tag.trim().replace(/^#+/, '');
+        return cleanTag ? `#${cleanTag}` : '';
+      })
+      .filter(Boolean)
+      .join(' ');
+      
+    const fullDescription = [caption.trim(), formattedTags].filter(Boolean).join('\n\n');
+    const title = caption.trim().substring(0, 95) || 'My YouTube Short';
+
+    try {
+      // 1. Resumable Upload Initialization
+      setUploadState({ isUploading: true, status: 'Creating entry...' });
+      const initResponse = await fetch('https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+          'X-Upload-Content-Length': videoFile.size.toString(),
+          'X-Upload-Content-Type': videoFile.type || 'video/mp4'
+        },
+        body: JSON.stringify({
+          snippet: {
+            title: title,
+            description: fullDescription,
+            categoryId: '22', // People & Blogs default
+          },
+          status: {
+            privacyStatus: 'private', // Default to private for review
+            selfDeclaredMadeForKids: false
+          }
+        })
+      });
+
+      if (!initResponse.ok) {
+        throw new Error('Failed to initialize YouTube upload.');
+      }
+
+      const uploadUrl = initResponse.headers.get('Location');
+      if (!uploadUrl) {
+        throw new Error('Upload URL not found in response.');
+      }
+
+      // 2. Upload the actual video file bytes
+      setUploadState({ isUploading: true, status: 'Uploading video...' });
+      const uploadResponse = await fetch(uploadUrl, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': videoFile.type || 'video/mp4'
+        },
+        body: videoFile
+      });
+
+      if (!uploadResponse.ok) {
+        throw new Error('Failed to upload video bytes to YouTube.');
+      }
+
+      setUploadState({ isUploading: false, status: 'Upload complete!' });
+      alert('Video successfully pushed to YouTube as Private!');
+      
+    } catch (error) {
+      console.error(error);
+      setUploadState({ isUploading: false, status: '' });
+      alert('YouTube upload failed. Check the console for details.');
+    }
+  };
+
+  const loginAndUploadYouTube = useGoogleLogin({
+    onSuccess: (tokenResponse) => handleYouTubeUpload(tokenResponse.access_token),
+    onError: (error) => {
+      console.error('Login Failed:', error);
+      alert('Google Login failed.');
+    },
+    scope: 'https://www.googleapis.com/auth/youtube.upload',
+  });
+
   // Generate the final text to copy and open the platform
   const handlePlatformAction = (platform) => {
+    if (platform.id === 'youtube') {
+      loginAndUploadYouTube();
+      return;
+    }
+
     // BUG FIX: Enhanced hashtag parsing
     const formattedTags = hashtags
       .split(/[\s,]+/)
@@ -289,7 +383,8 @@ export default function App() {
                     <button
                       key={platform.id}
                       onClick={() => handlePlatformAction(platform)}
-                      className={`w-full flex items-center justify-between p-4 rounded-xl border border-slate-800 bg-slate-950 transition-all duration-200 group hover:border-slate-600 ${platform.bgHover}`}
+                      disabled={platform.id === 'youtube' && uploadState.isUploading}
+                      className={`w-full flex items-center justify-between p-4 rounded-xl border border-slate-800 bg-slate-950 transition-all duration-200 group hover:border-slate-600 ${platform.bgHover} disabled:opacity-50 disabled:cursor-not-allowed`}
                     >
                       <div className="flex items-center space-x-4">
                         <div className={`p-2 rounded-lg bg-slate-900 border ${platform.borderColor}`}>
@@ -299,7 +394,17 @@ export default function App() {
                       </div>
 
                       <div className="flex items-center space-x-2">
-                        {isCopied ? (
+                        {platform.id === 'youtube' ? (
+                          uploadState.isUploading ? (
+                            <span className="flex items-center text-xs font-medium text-indigo-400 bg-indigo-500/10 px-3 py-1.5 rounded-full">
+                              <Loader2 size={14} className="mr-1 animate-spin" /> {uploadState.status}
+                            </span>
+                          ) : (
+                            <span className="flex items-center text-xs font-medium text-slate-400 bg-slate-800 px-3 py-1.5 rounded-full group-hover:text-white transition-colors">
+                              <UploadCloud size={14} className="mr-1" /> One-Click Push
+                            </span>
+                          )
+                        ) : isCopied ? (
                           <span className="flex items-center text-xs font-medium text-emerald-400 bg-emerald-400/10 px-3 py-1.5 rounded-full">
                             <CheckCircle2 size={14} className="mr-1" /> Copied!
                           </span>
